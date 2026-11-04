@@ -41,12 +41,14 @@ type History struct {
 	Read, Write uint64
 }
 type Snapshot struct {
-	Procs           []Proc
-	CPU             []float64
-	Memory, Total   uint64
-	Errors          []string
-	Disks, Networks map[string][2]float64
-	History         map[string]History
+	Available, Cached, SwapTotal, SwapUsed uint64
+	DiskActivity                           map[string]float64
+	Procs                                  []Proc
+	CPU                                    []float64
+	Memory, Total                          uint64
+	Errors                                 []string
+	Disks, Networks                        map[string][2]float64
+	History                                map[string]History
 }
 type Collector struct {
 	last        map[int32]Proc
@@ -112,7 +114,7 @@ func GPU() (map[string]string, map[int32]uint64, map[int32]float64) {
 	g := map[string]string{}
 	vram := map[int32]uint64{}
 	usage := map[int32]float64{}
-	keys := []string{"name", "driver_version", "utilization.gpu", "memory.used", "memory.total", "temperature.gpu", "power.draw", "power.limit", "clocks.gr", "clocks.mem", "fan.speed"}
+	keys := []string{"name", "driver_version", "utilization.gpu", "memory.used", "memory.total", "temperature.gpu", "power.draw", "power.limit", "clocks.gr", "clocks.mem", "fan.speed", "utilization.memory", "utilization.encoder", "utilization.decoder"}
 	s, e := Command("nvidia-smi", "--query-gpu="+strings.Join(keys, ","), "--format=csv,noheader,nounits")
 	if e != nil {
 		g["status"] = "NVIDIA telemetry unavailable"
@@ -139,13 +141,17 @@ func GPU() (map[string]string, map[int32]uint64, map[int32]float64) {
 	return g, vram, usage
 }
 func (c *Collector) Collect() Snapshot {
-	s := Snapshot{Disks: map[string][2]float64{}, Networks: map[string][2]float64{}}
+	s := Snapshot{DiskActivity: map[string]float64{}, Disks: map[string][2]float64{}, Networks: map[string][2]float64{}}
 	now := time.Now()
 	dt := now.Sub(c.at).Seconds()
 	s.CPU, _ = cpu.Percent(0, true)
 	if m, e := mem.VirtualMemory(); e == nil {
 		s.Memory = m.Used
 		s.Total = m.Total
+		s.Available = m.Available
+		s.Cached = m.Cached
+		s.SwapTotal = m.SwapTotal
+		s.SwapUsed = m.SwapTotal - m.SwapFree
 	} else {
 		s.Errors = append(s.Errors, e.Error())
 	}
@@ -209,6 +215,9 @@ func (c *Collector) Collect() Snapshot {
 			continue
 		}
 		if old, ok := c.disks[k]; ok && dt > 0 && v.ReadBytes >= old.ReadBytes && v.WriteBytes >= old.WriteBytes {
+			if v.IoTime >= old.IoTime {
+				s.DiskActivity[k] = min(100, float64(v.IoTime-old.IoTime)/dt/10)
+			}
 			s.Disks[k] = [2]float64{float64(v.ReadBytes-old.ReadBytes) / dt, float64(v.WriteBytes-old.WriteBytes) / dt}
 		}
 	}
@@ -316,4 +325,69 @@ func (c *Collector) AddGPUHistory(s *Snapshot, usage map[int32]float64, dt float
 			s.History[p.Name] = h
 		}
 	}
+}
+
+type InfoSection struct {
+	Title string
+	Rows  [][2]string
+}
+
+func SystemSections() []InfoSection {
+	var sections []InfoSection
+	if h, e := host.Info(); e == nil {
+		sections = append(sections, InfoSection{"Linux", [][2]string{{"Distribution", h.Platform + " " + h.PlatformVersion}, {"Kernel", h.KernelVersion}, {"Architecture", h.KernelArch}, {"Computer name", h.Hostname}, {"Up time", (time.Duration(h.Uptime) * time.Second).String()}}})
+	}
+	if cs, e := cpu.Info(); e == nil && len(cs) > 0 {
+		c := cs[0]
+		sections = append(sections, InfoSection{"Processor", [][2]string{{"Processor", c.ModelName}, {"Logical processors", fmt.Sprint(len(cs))}, {"Clock", fmt.Sprintf("%.0f MHz", c.Mhz)}, {"Cache", fmt.Sprintf("%d KiB", c.CacheSize)}}})
+	}
+	if m, e := mem.VirtualMemory(); e == nil {
+		sections = append(sections, InfoSection{"Memory", [][2]string{{"Usable RAM", fmt.Sprintf("%.1f GiB", float64(m.Total)/1073741824)}, {"Available", fmt.Sprintf("%.1f GiB", float64(m.Available)/1073741824)}, {"Cached", fmt.Sprintf("%.1f GiB", float64(m.Cached)/1073741824)}}})
+	}
+	board := InfoSection{Title: "Motherboard & BIOS"}
+	for _, r := range [][2]string{{"Manufacturer", "board_vendor"}, {"Motherboard", "board_name"}, {"BIOS vendor", "bios_vendor"}, {"BIOS version", "bios_version"}, {"BIOS date", "bios_date"}} {
+		if x, e := os.ReadFile(filepath.Join("/sys/class/dmi/id", r[1])); e == nil {
+			board.Rows = append(board.Rows, [2]string{r[0], strings.TrimSpace(string(x))})
+		}
+	}
+	if len(board.Rows) > 0 {
+		sections = append(sections, board)
+	}
+	storage := InfoSection{Title: "Storage"}
+	if parts, e := disk.Partitions(false); e == nil {
+		for _, p := range parts {
+			if strings.HasPrefix(p.Device, "/dev/loop") || strings.HasPrefix(p.Mountpoint, "/snap/") {
+				continue
+			}
+			storage.Rows = append(storage.Rows, [2]string{p.Device, p.Mountpoint + " (" + p.Fstype + ")"})
+		}
+	}
+	sections = append(sections, storage)
+	network := InfoSection{Title: "Network"}
+	ifs, _ := netstat.Interfaces()
+	for _, i := range ifs {
+		addresses := []string{}
+		for _, a := range i.Addrs {
+			addresses = append(addresses, a.Addr)
+		}
+		network.Rows = append(network.Rows, [2]string{i.Name, strings.Join(addresses, ", ")})
+	}
+	sections = append(sections, network)
+	displays := InfoSection{Title: "Displays"}
+	paths, _ := filepath.Glob("/sys/class/drm/card*-*/status")
+	for _, p := range paths {
+		if x, e := os.ReadFile(p); e == nil && strings.TrimSpace(string(x)) == "connected" {
+			m, _ := os.ReadFile(filepath.Join(filepath.Dir(p), "modes"))
+			modes := strings.Fields(string(m))
+			mode := "Connected"
+			if len(modes) > 0 {
+				mode = modes[0]
+			}
+			displays.Rows = append(displays.Rows, [2]string{filepath.Base(filepath.Dir(p)), mode})
+		}
+	}
+	if len(displays.Rows) > 0 {
+		sections = append(sections, displays)
+	}
+	return sections
 }

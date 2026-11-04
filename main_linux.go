@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
-	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,11 +32,25 @@ type pulseTheme struct{ fyne.Theme }
 func (t pulseTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
 	switch n {
 	case theme.ColorNameBackground:
-		return color.NRGBA{13, 16, 24, 255}
+		return windowBG
 	case theme.ColorNamePrimary:
-		return color.NRGBA{78, 183, 255, 255}
+		return hexColor(0x8b7cff)
+	case theme.ColorNameButton:
+		return hexColor(0x17171d)
+	case theme.ColorNameForeground:
+		return textColor
+	case theme.ColorNameDisabled, theme.ColorNamePlaceHolder:
+		return faintColor
+	case theme.ColorNameHover:
+		return hexColor(0x1c1c24)
+	case theme.ColorNameSelection:
+		return hexColor(0x232336)
+	case theme.ColorNameSeparator:
+		return lineColor
+	case theme.ColorNameInputBorder:
+		return lineColor
 	case theme.ColorNameInputBackground:
-		return color.NRGBA{23, 28, 40, 255}
+		return cardBG
 	}
 	return t.Theme.Color(n, theme.VariantDark)
 }
@@ -49,30 +62,39 @@ type row struct {
 	heat  []float64
 }
 type desktop struct {
-	perfMode        string
-	perfScroll      *container.Scroll
-	a               fyne.App
-	w               fyne.Window
-	c               *linuxmon.Collector
-	s               linuxmon.Snapshot
-	page            string
-	rows            []row
-	headers         []string
-	selected        int
-	table           *widget.Table
-	search          *widget.Entry
-	summary, status *widget.Label
-	body            *fyne.Container
-	graphs          map[string][]float64
-	gpu             map[string]string
-	vram            map[int32]uint64
-	gpuProc         map[int32]float64
-	gpuMu           sync.Mutex
-	info            string
-	sortCol         int
-	descending      bool
-	widget          fyne.Window
-	stop            chan struct{}
+	empty             *canvas.Text
+	sections          []linuxmon.InfoSection
+	navItems          map[string]*railItem
+	footer            *fyne.Container
+	actionButtons     []*widget.Button
+	resourceItems     map[string]*railItem
+	performanceDetail *fyne.Container
+	resourceRail      *fyne.Container
+
+	perfMode   string
+	perfScroll *container.Scroll
+	a          fyne.App
+	w          fyne.Window
+	c          *linuxmon.Collector
+	s          linuxmon.Snapshot
+	page       string
+	rows       []row
+	headers    []string
+	selected   int
+	table      *widget.Table
+	search     *widget.Entry
+	status     *widget.Label
+	body       *fyne.Container
+	graphs     map[string][]float64
+	gpu        map[string]string
+	vram       map[int32]uint64
+	gpuProc    map[int32]float64
+	gpuMu      sync.Mutex
+	info       string
+	sortCol    int
+	descending bool
+	widget     fyne.Window
+	stop       chan struct{}
 }
 
 func bytes(v float64) string {
@@ -298,23 +320,34 @@ func (d *desktop) loadServices() {
 	}()
 }
 func (d *desktop) refreshTable() {
+	for _, b := range d.actionButtons {
+		b.Disable()
+	}
+	if d.empty != nil {
+		d.empty.Hide()
+		if len(d.rows) == 0 {
+			message := "No matching processes"
+			switch d.page {
+			case "Startup apps":
+				message = "Startup entries in ~/.config/autostart will appear here."
+			case "App history":
+				message = "Application history accumulates while Pulse is running."
+			case "Users":
+				message = "No matching users"
+			case "Services":
+				message = "No system services found"
+			}
+			d.empty.Text = message
+			d.empty.Show()
+			d.empty.Refresh()
+		}
+	}
 	d.selected = -1
 	d.table.UnselectAll()
+	d.table.SetRowHeight(0, 50)
 	d.table.Refresh()
-	for i := range d.headers {
-		width := float32(115)
-		if i == 0 {
-			width = 230
-		}
-		if d.page == "Startup apps" && i == 2 {
-			width = 420
-		}
-		if d.page == "Services" && i == 4 {
-			width = 430
-		}
-		d.table.SetColumnWidth(i, width)
-	}
 }
+
 func (d *desktop) updateRows() {
 	if d.page == "Startup apps" || d.page == "Services" || d.page == "System info" || d.page == "Performance" {
 		return
@@ -353,9 +386,9 @@ func (d *desktop) updateRows() {
 			d.rows = append(d.rows, row{cells: []string{name, strconv.Itoa(u.n), pct(u.cpu), bytes(float64(u.mem)), bytes(u.disk), bytes(float64(u.vram))}, heat: []float64{0, 0, u.cpu / 100, float64(u.mem) / float64(d.s.Total), u.disk / 1e8, float64(u.vram) / 8e9}})
 		}
 	default:
-		d.headers = []string{"Name", "PID", "User", "CPU", "Memory", "Disk / s", "GPU", "VRAM"}
+		d.headers = []string{"Name", "CPU", "Memory", "Disk", "GPU", "GPU memory"}
 		if d.page == "Details" {
-			d.headers = append(d.headers, "Nice", "Threads", "CPU seconds")
+			d.headers = []string{"Name", "PID", "User", "CPU", "Memory", "Disk", "GPU", "GPU memory", "Nice", "Threads", "CPU seconds"}
 		}
 		for _, p := range d.s.Procs {
 			g := -1.0
@@ -366,13 +399,16 @@ func (d *desktop) updateRows() {
 			if v, ok := d.vram[p.PID]; ok {
 				vr = bytes(float64(v))
 			}
-			diskText := bytes(p.Disk)
+			diskText := bytes(p.Disk) + "/s"
 			if !p.IOAvailable {
 				diskText = "—"
 			}
 			r := row{pid: p.PID, cells: []string{p.Name, fmt.Sprint(p.PID), p.User, pct(p.CPU), bytes(float64(p.Memory)), diskText, pct(g), vr}, heat: []float64{0, 0, 0, p.CPU / 100, float64(p.Memory) / float64(d.s.Total), p.Disk / 1e8, g / 100, float64(d.vram[p.PID]) / 8e9}}
 			if d.page == "Details" {
 				r.cells = append(r.cells, fmt.Sprint(p.Nice), fmt.Sprint(p.Threads), fmt.Sprintf("%.1f", p.Seconds))
+			} else {
+				r.cells = append(r.cells[:1], r.cells[3:]...)
+				r.heat = append(r.heat[:1], r.heat[3:]...)
 			}
 			d.rows = append(d.rows, r)
 		}
@@ -380,7 +416,7 @@ func (d *desktop) updateRows() {
 	q := strings.ToLower(d.search.Text)
 	filtered := d.rows[:0]
 	for _, r := range d.rows {
-		if strings.Contains(strings.ToLower(strings.Join(r.cells, " ")), q) {
+		if strings.Contains(strings.ToLower(strings.Join(r.cells, " ")+" "+fmt.Sprint(r.pid)), q) {
 			filtered = append(filtered, r)
 		}
 	}
@@ -425,7 +461,7 @@ func sortValue(s string) float64 {
 	}
 	v, _ := strconv.ParseFloat(f[0], 64)
 	if len(f) > 1 {
-		switch f[1] {
+		switch strings.TrimSuffix(f[1], "/s") {
 		case "KiB":
 			v *= 1024
 		case "MiB":
@@ -438,20 +474,28 @@ func sortValue(s string) float64 {
 }
 func (d *desktop) showPage(page string) {
 	d.page = page
+	d.status.SetText("Updating every 1 s")
+	d.selected = -1
 	d.sortCol = 0
 	d.descending = false
+	d.actionButtons = nil
+	d.refreshNav()
 	tools := container.NewHBox()
 	switch page {
 	case "Processes", "Details":
-		tools.Add(widget.NewButton("End task", func() { d.processAction("End task") }))
-		tools.Add(widget.NewButton("Kill tree", func() { d.processAction("Kill tree") }))
-		tools.Add(widget.NewButton("Priority", func() { d.processAction("Priority") }))
+		for _, label := range []string{"Priority", "Kill tree", "End task"} {
+			action := label
+			b := widget.NewButton(label, func() { d.processAction(action) })
+			b.Disable()
+			d.actionButtons = append(d.actionButtons, b)
+			tools.Add(b)
+		}
 	case "Services":
 		for _, a := range []string{"start", "stop", "restart"} {
 			action := a
 			tools.Add(widget.NewButton(strings.Title(a), func() { d.service(action) }))
 		}
-		tools.Add(widget.NewButton("Refresh", d.loadServices))
+		tools.Add(widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), d.loadServices))
 	case "Startup apps":
 		tools.Add(widget.NewButton("Enable / disable", func() {
 			if r := d.chosen(); r != nil {
@@ -460,38 +504,38 @@ func (d *desktop) showPage(page string) {
 			}
 		}))
 	}
-	sorter := widget.NewSelect([]string{"Name ↑", "CPU ↓", "Memory ↓", "Disk ↓", "GPU ↓", "VRAM ↓"}, func(s string) {
-		switch s {
-		case "CPU ↓":
-			d.sortCol = 3
-		case "Memory ↓":
-			d.sortCol = 4
-		case "Disk ↓":
-			d.sortCol = 5
-		case "GPU ↓":
-			d.sortCol = 6
-		case "VRAM ↓":
-			d.sortCol = 7
-		default:
-			d.sortCol = 0
-		}
-		d.descending = d.sortCol > 0
-		d.updateRows()
-	})
-	sorter.SetSelected("Name ↑")
 	if page == "Processes" || page == "Details" {
-		tools.Add(sorter)
+		sorter := widget.NewSelect([]string{"CPU ↓", "Memory ↓", "Disk ↓", "GPU ↓", "VRAM ↓", "Name ↑"}, func(s string) {
+			name := strings.Fields(s)[0]
+			if name == "VRAM" {
+				name = "GPU memory"
+			}
+			for i, h := range d.headers {
+				if h == name {
+					d.sortCol = i
+				}
+			}
+			d.descending = name != "Name"
+			d.updateRows()
+		})
+		tools.Objects = append([]fyne.CanvasObject{sorter}, tools.Objects...)
+		if page == "Processes" {
+			d.headers = []string{"Name", "CPU", "Memory", "Disk", "GPU", "GPU memory"}
+		} else {
+			d.headers = []string{"Name", "PID", "User", "CPU", "Memory", "Disk", "GPU", "GPU memory", "Nice", "Threads", "CPU seconds"}
+		}
+		sorter.SetSelected("CPU ↓")
 	}
-	var center fyne.CanvasObject = d.table
+	d.empty = text("", 13, dimColor, false)
+	d.empty.Hide()
+	var center fyne.CanvasObject = container.NewStack(container.New(&tableLayout{d: d}, d.table), container.NewCenter(d.empty))
 	switch page {
 	case "Performance":
 		center = d.performance()
 	case "System info":
 		info := d.info + fmt.Sprintf("\nGPU: %s\nNVIDIA driver: %s\nVRAM: %s MiB\n", d.gpu["name"], d.gpu["driver_version"], d.gpu["memory.total"])
-		label := widget.NewLabel(info)
-		label.TextStyle.Monospace = true
-		center = container.NewScroll(label)
-		tools.Add(widget.NewButton("Copy", func() { d.w.Clipboard().SetContent(info) }))
+		center = d.systemInfoView(info)
+		tools.Add(widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() { d.w.Clipboard().SetContent(info) }))
 	case "Startup apps":
 		d.loadStartup()
 	case "Services":
@@ -499,128 +543,37 @@ func (d *desktop) showPage(page string) {
 	default:
 		d.updateRows()
 	}
-	d.body.Objects = []fyne.CanvasObject{container.NewBorder(container.NewVBox(widget.NewLabelWithStyle(page, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), tools), nil, nil, nil, center)}
+	title := text(page, 20, textColor, true)
+	toolbar := fixedSize(0, 50, container.NewBorder(nil, nil, fixedSize(0, 28, title), fixedSize(0, 32, tools), nil))
+	d.body.Objects = []fyne.CanvasObject{container.NewBorder(toolbar, nil, nil, nil, center)}
 	d.body.Refresh()
 }
 
 func resourceColor(s string) color.NRGBA {
 	switch {
-	case strings.HasPrefix(s, "CPU"):
-		return palette[0]
+	case strings.HasPrefix(s, "CPU"), s == "Processor":
+		return hexColor(0x4cc2ff)
 	case strings.HasPrefix(s, "Mem"):
-		return palette[1]
+		return hexColor(0xb47cff)
 	case strings.HasPrefix(s, "Disk"):
-		return palette[2]
+		return hexColor(0x3ddc84)
 	case strings.HasPrefix(s, "Net"):
-		return palette[3]
+		return hexColor(0xff9f43)
+	case strings.HasPrefix(s, "VRAM"), s == "GPU memory":
+		return hexColor(0xf46a48)
+	case strings.HasPrefix(s, "Temp"):
+		return hexColor(0x3ecf6e)
 	default:
-		return palette[4]
+		return hexColor(0xff5c7a)
 	}
 }
-
-var palette = []color.NRGBA{{76, 173, 255, 255}, {181, 126, 255, 255}, {255, 187, 80, 255}, {75, 221, 166, 255}, {247, 109, 159, 255}}
-
 func graph(values []float64, c color.Color) fyne.CanvasObject {
-	r := canvas.NewRasterWithPixels(func(x, y, w, h int) color.Color {
-		if len(values) < 2 {
-			return color.NRGBA{19, 24, 35, 255}
-		}
-		i := x * (len(values) - 1) / max(w-1, 1)
-		height := int(values[i] / 100 * float64(h))
-		if y >= h-height {
-			return c
-		}
-		if y%(max(h/4, 1)) == 0 {
-			return color.NRGBA{36, 43, 59, 255}
-		}
-		return color.NRGBA{19, 24, 35, 255}
-	})
-	r.SetMinSize(fyne.NewSize(250, 100))
-	return r
+	r, g, b, _ := c.RGBA()
+	raster := canvas.NewRaster(graphGenerator(append([]float64(nil), values...), color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 255}))
+	raster.SetMinSize(fyne.NewSize(72, 42))
+	return raster
 }
-func (d *desktop) performance() fyne.CanvasObject {
-	if d.perfMode == "" {
-		d.perfMode = "Overview"
-	}
-	d.perfScroll = container.NewVScroll(d.performanceCharts())
-	selector := widget.NewSelect([]string{"Overview", "CPU", "Memory", "Disks", "Network", "GPU"}, func(mode string) { d.perfMode = mode; d.refreshPerformance() })
-	selector.SetSelected(d.perfMode)
-	return container.NewBorder(container.NewHBox(widget.NewLabel("Resource"), selector), nil, nil, nil, d.perfScroll)
-}
-func (d *desktop) refreshPerformance() {
-	if d.perfScroll != nil {
-		d.perfScroll.Content = d.performanceCharts()
-		d.perfScroll.Refresh()
-	}
-}
-func (d *desktop) performanceCharts() fyne.CanvasObject {
-	boxes := container.NewVBox()
-	keys := make([]string, 0, len(d.graphs))
-	for k := range d.graphs {
-		show := false
-		switch d.perfMode {
-		case "CPU":
-			show = strings.HasPrefix(k, "CPU")
-		case "Memory":
-			show = k == "Memory"
-		case "Disks":
-			show = strings.HasPrefix(k, "Disk ")
-		case "Network":
-			show = strings.HasPrefix(k, "Network ")
-		case "GPU":
-			show = k == "GPU" || k == "VRAM"
-		default:
-			show = k == "CPU total" || k == "Memory" || k == "GPU" || k == "VRAM"
-		}
-		if show {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	grid := container.NewGridWithColumns(2)
-	for _, k := range keys {
-		v := append([]float64(nil), d.graphs[k]...)
-		last := 0.0
-		if len(v) > 0 {
-			last = v[len(v)-1]
-		}
-		label := fmt.Sprintf("%s  %.1f%%", k, last)
-		if strings.HasPrefix(k, "Disk ") || strings.HasPrefix(k, "Network ") {
-			label = k + "  " + bytes(last) + "/s"
-			peak := 1.0
-			for _, x := range v {
-				peak = max(peak, x)
-			}
-			for j := range v {
-				v[j] = v[j] / peak * 100
-			}
-		}
-		grid.Add(container.NewVBox(widget.NewLabel(label), graph(v, resourceColor(k))))
-	}
-	boxes.Add(grid)
-	g := d.gpu
-	boxes.Add(widget.NewLabel(fmt.Sprintf("GPU: %s • driver %s\nTemperature %s °C • power %s / %s W • fan %s %%\nGraphics %s MHz • memory %s MHz • VRAM %s / %s MiB\n%s", g["name"], g["driver_version"], g["temperature.gpu"], g["power.draw"], g["power.limit"], g["fan.speed"], g["clocks.gr"], g["clocks.mem"], g["memory.used"], g["memory.total"], g["status"])))
-	keys = nil
-	for k := range d.s.Disks {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := d.s.Disks[k]
-		boxes.Add(widget.NewLabel(fmt.Sprintf("Disk %s    read %s/s    write %s/s", k, bytes(v[0]), bytes(v[1]))))
-	}
-	keys = nil
-	for k := range d.s.Networks {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := d.s.Networks[k]
-		boxes.Add(widget.NewLabel(fmt.Sprintf("Network %s    receive %s/s    send %s/s", k, bytes(v[0]), bytes(v[1]))))
-	}
 
-	return boxes
-}
 func (d *desktop) tick(s linuxmon.Snapshot) {
 	d.s = s
 	d.gpuMu.Lock()
@@ -653,8 +606,12 @@ func (d *desktop) tick(s linuxmon.Snapshot) {
 	if v, e := strconv.ParseFloat(d.gpu["utilization.gpu"], 64); e == nil {
 		d.push("GPU", v)
 	}
-	text := fmt.Sprintf("CPU %.1f%%    RAM %s / %s    GPU %s%%    %d processes", avg, bytes(float64(s.Memory)), bytes(float64(s.Total)), d.gpu["utilization.gpu"], len(s.Procs))
-	d.summary.SetText(text)
+	for key, field := range map[string]string{"GPU memory controller": "utilization.memory", "GPU encode": "utilization.encoder", "GPU decode": "utilization.decoder"} {
+		if v, e := strconv.ParseFloat(d.gpu[field], 64); e == nil {
+			d.push(key, v)
+		}
+	}
+	d.updateFooter()
 	if d.widget != nil {
 		d.updateWidget(avg, memory)
 	}
@@ -705,7 +662,7 @@ func (d *desktop) updateWidget(cpu, memory float64) {
 	}{{"CPU", pct(cpu), cpu}, {"Memory", pct(memory), memory}, {"GPU", pct(gpu) + " • " + d.gpu["temperature.gpu"] + " °C", gpu}, {"VRAM", d.gpu["memory.used"] + " MiB", used / max(total, 1) * 100}} {
 		c := resourceColor(r.name)
 		text := canvas.NewText(r.name+"  "+r.text, c)
-		text.TextSize = 14
+		text.TextSize = 12
 		v := r.value
 		bar := canvas.NewRasterWithPixels(func(x, y, w, h int) color.Color {
 			if float64(x) < float64(w)*v/100 {
@@ -716,7 +673,7 @@ func (d *desktop) updateWidget(cpu, memory float64) {
 		bar.SetMinSize(fyne.NewSize(240, 8))
 		box.Add(container.NewVBox(text, bar))
 	}
-	d.widget.SetContent(box)
+	d.widget.SetContent(inset(10, 10, 12, 12, box))
 }
 func (d *desktop) openCompact() {
 
@@ -731,7 +688,7 @@ func (d *desktop) openCompact() {
 	}
 	avg /= float64(max(len(d.s.CPU), 1))
 	d.updateWidget(avg, float64(d.s.Memory)/float64(max(d.s.Total, 1))*100)
-	d.widget.Resize(fyne.NewSize(280, 235))
+	d.widget.Resize(fyne.NewSize(280, 190))
 	d.widget.SetCloseIntercept(func() { d.widget.Hide() })
 	if native, ok := d.widget.(desktopDriver.Window); ok {
 		native.RequestAlwaysOnTop()
@@ -746,53 +703,19 @@ func main() {
 	a.Settings().SetTheme(pulseTheme{theme.DefaultTheme()})
 	w := a.NewWindow("Pulse — Linux")
 	w.SetMaster()
-	d := &desktop{a: a, w: w, c: linuxmon.New(), selected: -1, graphs: map[string][]float64{}, gpu: map[string]string{}, vram: map[int32]uint64{}, gpuProc: map[int32]float64{}, body: container.NewStack(), summary: widget.NewLabel("Collecting live data…"), status: widget.NewLabel("Linux • CPU % is normalized across all cores • — means unavailable"), stop: make(chan struct{}), info: linuxmon.SystemInfo()}
+	d := &desktop{a: a, w: w, c: linuxmon.New(), selected: -1, graphs: map[string][]float64{}, gpu: map[string]string{}, vram: map[int32]uint64{}, gpuProc: map[int32]float64{}, body: container.NewStack(), status: widget.NewLabel("Linux • CPU % is normalized across all cores • — means unavailable"), stop: make(chan struct{}), info: linuxmon.SystemInfo(), sections: linuxmon.SystemSections()}
 	d.search = widget.NewEntry()
 	d.search.SetPlaceHolder("Search processes, users or app history")
 	d.search.OnChanged = func(string) { d.updateRows() }
-	d.table = widget.NewTable(func() (int, int) { return len(d.rows) + 1, len(d.headers) }, func() fyne.CanvasObject {
-		return container.NewStack(canvas.NewRectangle(color.Transparent), widget.NewLabel(""))
-	}, func(id widget.TableCellID, o fyne.CanvasObject) {
-		box := o.(*fyne.Container)
-		bg := box.Objects[0].(*canvas.Rectangle)
-		label := box.Objects[1].(*widget.Label)
-		bg.FillColor = color.Transparent
-		label.TextStyle.Bold = id.Row == 0
-		if id.Row == 0 {
-			if id.Col < len(d.headers) {
-				label.SetText(d.headers[id.Col])
-			}
-		} else if id.Row-1 < len(d.rows) {
-			r := d.rows[id.Row-1]
-			if id.Col < len(r.cells) {
-				label.SetText(r.cells[id.Col])
-			}
-			if id.Col < len(r.heat) && r.heat[id.Col] > 0 {
-				p := resourceColor(d.headers[id.Col])
-				p.A = uint8(20 + min(r.heat[id.Col], 1)*145)
-				bg.FillColor = p
-			}
-		}
-		bg.Refresh()
-	})
-	d.table.OnSelected = func(id widget.TableCellID) {
-		if id.Row == 0 {
-			d.sortCol = id.Col
-			d.descending = !d.descending
-			d.updateRows()
-			return
-		}
-		d.selected = id.Row - 1
-	}
-	nav := container.NewVBox(widget.NewLabelWithStyle("PULSE", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-	for _, p := range []string{"Processes", "Performance", "App history", "Startup apps", "Users", "Details", "Services", "System info"} {
-		page := p
-		nav.Add(widget.NewButton(page, func() { d.showPage(page) }))
-	}
-	nav.Add(widget.NewSeparator())
-	nav.Add(widget.NewButton("Compact widget", d.openCompact))
-	w.SetContent(container.NewBorder(container.NewVBox(d.summary, d.search), d.status, nav, nil, d.body))
+	d.table = d.createTable()
+	w.SetContent(d.shell())
 	w.Resize(fyne.NewSize(1280, 820))
+	if size := os.Getenv("PULSE_WINDOW_SIZE"); size != "" {
+		var width, height float32
+		if _, e := fmt.Sscanf(size, "%fx%f", &width, &height); e == nil && width >= 1000 && height >= 680 {
+			w.Resize(fyne.NewSize(width, height))
+		}
+	}
 	d.showPage("Processes")
 	collectorDone := make(chan struct{})
 	closing := false
@@ -821,7 +744,7 @@ func main() {
 	}()
 	go func() {
 		defer close(collectorDone)
-		t := time.NewTicker(2 * time.Second)
+		t := time.NewTicker(time.Second)
 		defer t.Stop()
 		n := 0
 		observed := time.Now()
@@ -837,7 +760,7 @@ func main() {
 			d.c.AddGPUHistory(&s, usage, now.Sub(observed).Seconds())
 			observed = now
 			n++
-			if n%15 == 0 {
+			if n%30 == 0 {
 				if e := d.c.Save(); e != nil {
 					fyne.Do(func() { d.err(e) })
 				}
@@ -851,33 +774,7 @@ func main() {
 			}
 		}
 	}()
-	if p := os.Getenv("PULSE_SCREENSHOT"); p != "" {
-		go func() {
-			time.Sleep(7 * time.Second)
-			if page := os.Getenv("PULSE_SCREENSHOT_PAGE"); page != "" {
-				fyne.DoAndWait(func() {
-					if page == "Compact widget" {
-						d.openCompact()
-					} else {
-						d.showPage(page)
-					}
-				})
-				time.Sleep(time.Second)
-			}
-			fyne.Do(func() {
-				f, e := os.Create(p)
-				if e == nil {
-					capture := w.Canvas()
-					if os.Getenv("PULSE_SCREENSHOT_PAGE") == "Compact widget" && d.widget != nil {
-						capture = d.widget.Canvas()
-					}
-					e = png.Encode(f, capture.Capture())
-					_ = f.Close()
-				}
-				d.err(e)
-			})
-		}()
-	}
+	d.startCapture()
 	if duration, e := time.ParseDuration(os.Getenv("PULSE_SMOKE_DURATION")); e == nil && duration > 0 {
 		go func() { time.Sleep(duration); fyne.Do(func() { w.Close() }) }()
 	}

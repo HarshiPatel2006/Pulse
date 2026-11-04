@@ -103,8 +103,11 @@ widget requests always-on-top placement, subject to compositor/window-manager
 policy; use the window menu's Keep Above option if needed.
 
 Windows-only concepts (registry startup, Windows handles, session disconnect,
-Windows service startup types) are omitted. Linux styling and controls follow
-the native toolkit, with the same dark resource colors and heat-map cells.
+Windows service startup types) are omitted. Linux uses a native Fyne window with the Windows app's dark palette, compact
+sidebar, SVG icons, resource summary headers and heat-map columns. Performance
+uses a resource rail with live miniature graphs and detailed panels. The
+60-sample graphs use interpolated traces, gradient fills and a one-second update
+interval; GPU telemetry is sampled separately every few seconds.
 
 Validation:
 
@@ -117,7 +120,12 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/Pulse.exe .
 For an automated desktop smoke capture, set `PULSE_SCREENSHOT=/absolute/path.png`
 and optionally `PULSE_SCREENSHOT_PAGE=Performance` and `PULSE_SMOKE_DURATION=12s`.
 These capture the application's rendered canvas after live sampling and exit
-normally after the specified duration.
+normally after the specified duration. `PULSE_SCREENSHOT_RESOURCE=GPU` (or
+`Memory` / `CPU`) selects the Performance detail panel. Use
+`PULSE_SCREENSHOT_DELAY=64s` for a full minute of history. `PULSE_PROOF_DIR=/path`
+captures every page in one session after that delay; allow at least 84 seconds
+with `PULSE_SMOKE_DURATION=84s`. `PULSE_WINDOW_SIZE=1920x1080` and the toolkit's
+`FYNE_SCALE` setting can be used to check display scaling.
 
 ### Windows keyboard shortcuts
 
