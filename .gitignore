@@ -1,3 +1,5 @@
 Pulse.exe
 *.exe
 *.zip
+
+/dist/

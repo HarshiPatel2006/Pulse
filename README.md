@@ -51,7 +51,75 @@ Optional: **Settings → Restart as admin** lets Pulse end protected processes, 
 
 **Requirements:** Windows 10 or 11 (64-bit). GPU details need an NVIDIA GPU with a current driver. Other GPUs still show usage and memory through Windows counters.
 
-### Keyboard shortcuts
+## Linux
+
+Run **`./run-linux.sh`** first on Ubuntu x86_64. The launcher runs
+`dist/pulse-linux-amd64`, building it when missing or older than the source.
+The binary is a native Fyne desktop application with X11 and Wayland support.
+On GNOME Wayland, Fyne normally selects XWayland for window decorations.
+Keep XWayland enabled; `FYNE_PLATFORM=x11 ./run-linux.sh` explicitly selects it.
+
+To build, install Go 1.26 or newer (a user-local official Go tarball is fine), GCC,
+and the graphics headers:
+
+```bash
+sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+# With Go on PATH:
+./run-linux.sh
+# Or with a user-local Go installation:
+GO="$HOME/.local/go-pulse/bin/go" ./run-linux.sh
+```
+
+Manual build:
+
+```bash
+mkdir -p dist
+go build -trimpath -ldflags='-s -w' -o dist/pulse-linux-amd64 .
+./dist/pulse-linux-amd64
+```
+
+The Linux UI includes Processes, Performance (60-sample CPU/core, RAM, GPU,
+VRAM, disk and network graphs), App history, Startup apps, Users, Details,
+Services, System info and a compact widget. Click a process, history or user table header to sort;
+processes also have a sort selector. Search filters processes, users and history.
+Select a process before using End task (SIGTERM), Kill tree (SIGKILL) or Priority
+(nice -20 through 19). Identity checks reject reused PIDs. Permission failures
+are shown in the window; Pulse itself runs without root.
+
+NVIDIA telemetry uses the installed driver's `nvidia-smi`: utilization, VRAM,
+temperature, power, clocks and fan. Per-process GPU utilization and graphics VRAM
+use `pmon` when supported; compute VRAM also uses `--query-compute-apps`.
+An em dash means the driver did not report a per-process value. Other vendors'
+GPU telemetry is currently unavailable. CPU percentages are normalized to the
+whole machine. Restricted `/proc` I/O counters may be unavailable for other users.
+
+App history accumulates observed CPU/GPU time and disk bytes by executable name,
+persisted under `${XDG_CONFIG_HOME:-~/.config}/Pulse/history-linux.json` every
+30 seconds and on normal exit. Startup toggles edit only the current user's
+`~/.config/autostart/*.desktop` entries. Services controls use `systemctl`
+and may trigger the desktop's polkit authentication prompt. System information
+uses `/proc`, `/sys` and OS APIs; no `dmidecode` or root is required. The compact
+widget requests always-on-top placement, subject to compositor/window-manager
+policy; use the window menu's Keep Above option if needed.
+
+Windows-only concepts (registry startup, Windows handles, session disconnect,
+Windows service startup types) are omitted. Linux styling and controls follow
+the native toolkit, with the same dark resource colors and heat-map cells.
+
+Validation:
+
+```bash
+go test -race ./...
+go vet ./...
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/Pulse.exe .
+```
+
+For an automated desktop smoke capture, set `PULSE_SCREENSHOT=/absolute/path.png`
+and optionally `PULSE_SCREENSHOT_PAGE=Performance` and `PULSE_SMOKE_DURATION=12s`.
+These capture the application's rendered canvas after live sampling and exit
+normally after the specified duration.
+
+### Windows keyboard shortcuts
 
 | Keys | Action |
 |---|---|
@@ -63,7 +131,7 @@ Optional: **Settings → Restart as admin** lets Pulse end protected processes, 
 
 ## Build from source
 
-You need [Go](https://go.dev/dl/) 1.22 or newer, on any OS:
+You need [Go](https://go.dev/dl/) 1.26 or newer, on any OS:
 
 ```bash
 GOOS=windows GOARCH=amd64 go build -ldflags "-H windowsgui -s -w" -o Pulse.exe .
