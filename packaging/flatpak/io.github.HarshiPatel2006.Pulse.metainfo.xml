@@ -1,2 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop"><id>io.github.HarshiPatel2006.Pulse</id><name>Pulse</name><summary>Lightweight Task Manager for Windows and Linux</summary><metadata_license>MIT</metadata_license><project_license>MIT</project_license><description><p>Free open-source system monitor and Task Manager alternative.</p></description><launchable type="desktop-id">io.github.HarshiPatel2006.Pulse.desktop</launchable><releases><release version="0.1.0" date="2026-11-05" /></releases></component>
+<component type="desktop">
+  <id>io.github.HarshiPatel2006.Pulse</id>
+  <name>Pulse</name>
+  <summary>Lightweight Task Manager and system monitor</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.harshipatel2006"><name>Harshi Patel</name></developer>
+  <url type="homepage">https://github.com/HarshiPatel2006/Pulse</url>
+  <url type="bugtracker">https://github.com/HarshiPatel2006/Pulse/issues</url>
+  <description><p>Pulse is a free open-source Task Manager alternative and lightweight system monitor for Linux and Windows. It provides process search, safe end-task controls, CPU, memory, disk, network, GPU and VRAM telemetry, startup apps, services, and a compact widget.</p></description>
+  <launchable type="desktop-id">io.github.HarshiPatel2006.Pulse.desktop</launchable>
+  <screenshots>
+    <screenshot type="default"><caption>Process search and resource usage</caption><image>https://raw.githubusercontent.com/HarshiPatel2006/Pulse/main/docs/screenshots/processes.png</image></screenshot>
+    <screenshot><caption>GPU performance telemetry</caption><image>https://raw.githubusercontent.com/HarshiPatel2006/Pulse/main/docs/screenshots/performance-gpu.png</image></screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"><content_attribute id="sex-nudity">none</content_attribute><content_attribute id="sex-themes">none</content_attribute><content_attribute id="sex-prostitution">none</content_attribute><content_attribute id="social-chat">none</content_attribute><content_attribute id="social-audio">none</content_attribute><content_attribute id="social-contacts">none</content_attribute><content_attribute id="social-info">none</content_attribute><content_attribute id="social-location">none</content_attribute><content_attribute id="money-gambling">none</content_attribute></content_rating>
+  <releases><release version="0.1.0" date="2026-11-05" /></releases>
+</component>
