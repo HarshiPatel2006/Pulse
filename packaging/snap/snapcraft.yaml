@@ -1,0 +1,16 @@
+name: pulse-task-manager
+base: core24
+version: '0.1.0'
+summary: Lightweight Task Manager and system monitor
+description: Free open-source Task Manager alternative for Linux with CPU, memory, disk, network, GPU and VRAM monitoring.
+grade: devel
+confinement: classic
+parts:
+  pulse:
+    plugin: go
+    source: ../..
+    build-snaps: [go/1.26/stable]
+    build-packages: [gcc, libgl1-mesa-dev, xorg-dev, libwayland-dev, libxkbcommon-dev]
+apps:
+  pulse:
+    command: bin/pulse

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop"><id>io.github.HarshiPatel2006.Pulse</id><name>Pulse</name><summary>Lightweight Task Manager for Windows and Linux</summary><metadata_license>MIT</metadata_license><project_license>MIT</project_license><description><p>Free open-source system monitor and Task Manager alternative.</p></description><launchable type="desktop-id">io.github.HarshiPatel2006.Pulse.desktop</launchable><releases><release version="0.1.0" date="2026-11-05" /></releases></component>

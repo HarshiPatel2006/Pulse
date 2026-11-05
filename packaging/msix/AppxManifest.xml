@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10">
+  <Identity Name="HarshiPatel2006.Pulse" Publisher="CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER" Version="0.1.0.0" />
+  <Properties><DisplayName>Pulse</DisplayName><PublisherDisplayName>Harshi Patel</PublisherDisplayName><Description>Free open-source Task Manager alternative and lightweight system monitor.</Description><Logo>Assets\StoreLogo.png</Logo></Properties>
+  <Resources><Resource Language="en-us" /></Resources>
+  <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
+  <Applications><Application Id="Pulse" Executable="Pulse.exe" EntryPoint="Windows.FullTrustApplication"><uap:VisualElements AppListEntry="none" DisplayName="Pulse" Description="Task Manager for Windows" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" /></Application></Applications>
+</Package>

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Pulse
+Comment=Lightweight Task Manager and system monitor
+Exec=pulse
+Icon=io.github.HarshiPatel2006.Pulse
+Type=Application
+Categories=System;Monitor;

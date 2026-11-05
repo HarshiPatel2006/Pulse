@@ -1,0 +1,14 @@
+PackageIdentifier: HarshiPatel2006.Pulse
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: Harshi Patel
+PackageName: Pulse
+ShortDescription: Free open-source Task Manager for Windows and Linux
+Description: Lightweight system monitor and Task Manager alternative with CPU, memory, disk, GPU and VRAM telemetry.
+Installers:
+- Architecture: x64
+  InstallerType: portable
+  InstallerUrl: https://github.com/HarshiPatel2006/Pulse/releases/download/v0.1.0/Pulse-windows-amd64.exe
+  InstallerSha256: REPLACE_WITH_RELEASE_SHA256
+ManifestType: singleton
+ManifestVersion: 1.6.0
