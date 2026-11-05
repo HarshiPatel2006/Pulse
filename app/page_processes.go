@@ -19,17 +19,17 @@ type procPage struct {
 }
 
 type procGroup struct {
-	key     string
-	name    string
-	procs   []*sys.Proc
-	isApp   bool
-	isWin   bool
-	cpu     float64
-	mem     uint64
-	disk    float64
-	gpu     float64
-	vram    uint64
-	path    string
+	key   string
+	name  string
+	procs []*sys.Proc
+	isApp bool
+	isWin bool
+	cpu   float64
+	mem   uint64
+	disk  float64
+	gpu   float64
+	vram  uint64
+	path  string
 }
 
 func matches(q string, p *sys.Proc) bool {
@@ -78,6 +78,13 @@ func (pp *procPage) draw(a *App, c *ui.Canvas, x, y, w, h float32) {
 
 	// actions (right side of header)
 	bx := x + w - 120
+	a.btn(c, bx-140, y-42, 132, 32, "exportcsv", "Export CSV", GAdd, 0, true, func() {
+		if err := sys.ExportProcesses(sys.DataDir()+`\processes.csv`, s.Procs); err != nil {
+			a.showToast("Couldn't export process list")
+			return
+		}
+		a.showToast("Exported process list to Pulse\\processes.csv")
+	})
 	a.btn(c, bx, y-42, 120, 32, "endtask", "End task", GEnd, 2, pp.t.Sel != "", func() { pp.endSelected(a) })
 	bx -= 148
 	a.btn(c, bx, y-42, 140, 32, "runtask", "Run new task", GAdd, 0, true, runNewTask)
@@ -211,7 +218,9 @@ func (pp *procPage) draw(a *App, c *ui.Canvas, x, y, w, h float32) {
 			rows = append(rows, r)
 			if multi && pp.expanded[g.key] {
 				kids := append([]*sys.Proc{}, g.procs...)
-				sort.Slice(kids, func(i, j int) bool { return kids[i].CPU+float64(kids[i].Private)/1e10 > kids[j].CPU+float64(kids[j].Private)/1e10 })
+				sort.Slice(kids, func(i, j int) bool {
+					return kids[i].CPU+float64(kids[i].Private)/1e10 > kids[j].CPU+float64(kids[j].Private)/1e10
+				})
 				for _, p := range kids {
 					n := displayName(p)
 					if p.Title != "" {

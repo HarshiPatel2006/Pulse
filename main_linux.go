@@ -117,6 +117,23 @@ func (d *desktop) err(e error) {
 		dialog.ShowError(e, d.w)
 	}
 }
+func (d *desktop) exportCSV() {
+	config, err := os.UserConfigDir()
+	if err != nil {
+		d.err(err)
+		return
+	}
+	path := filepath.Join(config, "Pulse", "processes.csv")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		d.err(err)
+		return
+	}
+	if err := linuxmon.ExportProcesses(path, d.s.Procs); err != nil {
+		d.err(err)
+		return
+	}
+	d.status.SetText("Exported process list to " + path)
+}
 func (d *desktop) chosen() *row {
 	if d.selected < 0 || d.selected >= len(d.rows) {
 		return nil
@@ -483,6 +500,9 @@ func (d *desktop) showPage(page string) {
 	tools := container.NewHBox()
 	switch page {
 	case "Processes", "Details":
+		if page == "Processes" {
+			tools.Add(widget.NewButton("Export CSV", d.exportCSV))
+		}
 		for _, label := range []string{"Priority", "Kill tree", "End task"} {
 			action := label
 			b := widget.NewButton(label, func() { d.processAction(action) })
