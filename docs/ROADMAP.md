@@ -13,6 +13,8 @@ Pulse already had process search/filter, confirmed end-task and process-tree ter
 - **Export CSV:** the Processes view now exports the current process snapshot to `Pulse/processes.csv` on Windows and `$XDG_CONFIG_HOME/Pulse/processes.csv` on Linux. Columns are platform-appropriate and spreadsheet-friendly.
 - **Shared export behavior:** both native front ends use small, deterministic CSV writers with headers and explicit error reporting, without adding a background service or privileged dependency.
 - **Cleanup:** removed an unused Windows path helper and an obsolete Linux CSV import.
+- **Windows notification area:** Pulse now installs a Shell_NotifyIcon entry with live CPU/RAM tooltip text; left-click shows/hides the window and right-click offers Show/hide and Exit.
+- **Linux tray status:** the current Fyne desktop API used by Pulse does not expose a stable cross-desktop notification-area/tray contract. Linux tray support is therefore explicitly deferred until a maintained XDG-compatible option is selected and tested across GNOME, KDE, X11, and Wayland.
 
 ## Next
 

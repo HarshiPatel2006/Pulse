@@ -4,6 +4,7 @@
 package app
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 
 const (
 	wmData    = win.WM_APP + 1
+	wmTray    = win.WM_APP + 2
 	timerAnim = 1
 	timerTrim = 2
 	className = "PulseMonitorWindow"
@@ -58,11 +60,11 @@ type App struct {
 	set    Settings
 	static *sys.StaticInfo
 
-	memDC   uintptr
-	memBmp  uintptr
-	bmpW    int32
-	bmpH    int32
-	scale   float32
+	memDC  uintptr
+	memBmp uintptr
+	bmpW   int32
+	bmpH   int32
+	scale  float32
 
 	zones    []Zone
 	hover    string
@@ -73,13 +75,14 @@ type App struct {
 	// text input
 	search      string
 	searchFocus bool
+	trayHidden  bool
 
 	toast   string
 	toastAt time.Time
 
 	icons map[string]uintptr
 
-	pages  map[int]page
+	pages                                              map[int]page
 	cursorArrow, cursorHand, cursorIBeam, cursorSizeWE uintptr
 }
 
@@ -150,6 +153,7 @@ func Run(demo, restarted bool) {
 	}
 	a.hwnd = win.CreateWindowEx(ex, className, Title, win.WS_OVERLAPPEDWINDOW, x, y, 100, 100, 0)
 	a.scale = float32(win.GetDpiForWindow(a.hwnd)) / 96
+	win.TrayAdd(a.hwnd, win.LoadIcon(inst, 1), "Pulse")
 	// apply logical size at the window's DPI
 	sw, sh := int32(float32(w)*a.scale), int32(float32(h)*a.scale)
 	win.SetWindowPos(a.hwnd, 0, 0, 0, sw, sh, win.SWP_NOMOVE|win.SWP_NOZORDER|win.SWP_FRAMECHANGED)
@@ -196,6 +200,24 @@ func (a *App) showToast(s string) {
 	win.Invalidate(a.hwnd)
 }
 
+func (a *App) updateTray() {
+	if a.hwnd == 0 {
+		return
+	}
+	tip := fmt.Sprintf("Pulse • CPU %.0f%% • RAM %.0f%%", a.col.Snap.CPU.Total, a.col.Snap.Mem.Load)
+	win.TrayModify(a.hwnd, win.LoadIcon(win.ModuleHandle(), 1), tip)
+}
+
+func (a *App) toggleTrayWindow() {
+	a.trayHidden = !a.trayHidden
+	if a.trayHidden {
+		win.ShowWindow(a.hwnd, win.SW_HIDE)
+	} else {
+		win.ShowWindow(a.hwnd, win.SW_SHOW)
+		win.SetForegroundWindow(a.hwnd)
+	}
+}
+
 func loword(l uintptr) int32 { return int32(int16(l & 0xFFFF)) }
 func hiword(l uintptr) int32 { return int32(int16((l >> 16) & 0xFFFF)) }
 
@@ -221,8 +243,17 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		a.paint()
 		return 0
 	case wmData:
+		a.updateTray()
 		if !win.IsIconic(hwnd) {
 			win.Invalidate(hwnd)
+		}
+		return 0
+	case wmTray:
+		switch lp {
+		case win.WM_LBUTTONUP:
+			a.toggleTrayWindow()
+		case win.WM_RBUTTONUP:
+			a.popup([]menuItem{{label: "Show / hide Pulse", enabled: true, act: a.toggleTrayWindow}, {label: "Exit", enabled: true, act: func() { win.PostMessage(a.hwnd, win.WM_CLOSE, 0, 0) }}})
 		}
 		return 0
 	case win.WM_TIMER:
@@ -323,6 +354,7 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		win.DestroyWindow(hwnd)
 		return 0
 	case win.WM_DESTROY:
+		win.TrayDelete(hwnd)
 		win.PostQuitMessage(0)
 		return 0
 	}
