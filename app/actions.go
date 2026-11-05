@@ -5,7 +5,6 @@ package app
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	"pulse/sys"
@@ -207,5 +206,3 @@ func (a *App) procMenu(procs []*sys.Proc, all []*sys.Proc, label string) {
 func runNewTask() {
 	win.ShellOpen("open", "explorer.exe", "shell:::{2559a1f3-21d7-11d4-bdaf-00c04f60b9f0}", "")
 }
-
-func baseName(p string) string { return filepath.Base(p) }

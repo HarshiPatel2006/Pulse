@@ -4,9 +4,15 @@
 
 Windows Task Manager establishes the familiar process, performance, startup, users, details, and services model. System Informer/Process Hacker adds process-tree actions, priority controls, path inspection, and deep per-process diagnostics. btop emphasizes fast keyboard navigation and compact, sortable resource views. Mission Center provides a modern Linux process/performance UI. GNOME System Monitor demonstrates clear process search, end-process confirmation, and desktop integration.
 
-## Choices shipped in Pulse
+## Features that already existed on main
 
-The high-value features that fit Pulse's lightweight scope are process search/filter by name, publisher, title, or PID; end task and process-tree termination with confirmation; per-process GPU, VRAM, disk, and other resource telemetry; and startup apps, dark theme, and a compact always-on-top widget. They are implemented on both platforms where supported, with graceful unavailable-telemetry reporting on Linux.
+Pulse already had process search/filter, confirmed end-task and process-tree termination, per-process GPU/VRAM/disk telemetry, startup apps, a dark theme, and a compact always-on-top widget on main. These remain supported on both platforms where the operating system exposes the data.
+
+## New in this branch
+
+- **Export CSV:** the Processes view now exports the current process snapshot to `Pulse/processes.csv` on Windows and `$XDG_CONFIG_HOME/Pulse/processes.csv` on Linux. Columns are platform-appropriate and spreadsheet-friendly.
+- **Shared export behavior:** both native front ends use small, deterministic CSV writers with headers and explicit error reporting, without adding a background service or privileged dependency.
+- **Cleanup:** removed an unused Windows path helper and an obsolete Linux CSV import.
 
 ## Next
 
